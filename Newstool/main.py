@@ -10,34 +10,29 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 load_dotenv()
 
-# ---------------- CONSTANTS ----------------
 CHUNK_SIZE = 1000
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 COLLECTION_NAME = "news"
 
-MAX_RECENT_MESSAGES = 4
-SUMMARY_TRIGGER = 8
+MAX_RECENT_MESSAGES = 6
+SUMMARY_TRIGGER = 12
 
-# ---------------- EMBEDDINGS ----------------
 embeddings = HuggingFaceEmbeddings(
     model_name=EMBEDDING_MODEL,
     model_kwargs={"trust_remote_code": True}
 )
 
-# ---------------- LLM ----------------
 llm = ChatGroq(
     model_name="llama-3.3-70b-versatile",
     temperature=0.9,
     max_tokens=500
 )
 
-# ---------------- VECTOR STORE ----------------
 vector_store = Chroma(
     collection_name=COLLECTION_NAME,
     embedding_function=embeddings
 )
 
-# ---------------- INGESTION ----------------
 def process_urls(urls):
     yield "Resetting vector store...✅"
     vector_store.reset_collection()
@@ -58,14 +53,22 @@ def process_urls(urls):
 
     yield "Ingestion complete 🎉"
 
-# ---------------- MEMORY SUMMARIZATION ----------------
 SUMMARY_PROMPT = ChatPromptTemplate.from_template(
     """
-    Summarize the following conversation.
-    Keep only important facts and user intent.
+    You are summarizing a conversation for long-term memory.
+
+    Task:
+    - Extract only important facts, decisions, entities, and user intent.
+    - Remove greetings, small talk, and repeated information.
+    - Do NOT infer, assume, or add new information.
+    - Use ONLY what is explicitly stated in the conversation.
+
+    If no meaningful information is present, return an empty summary.
 
     Conversation:
     {conversation}
+
+    Summary:
     """
 )
 
@@ -74,7 +77,6 @@ def summarize_conversation(messages):
     chain = SUMMARY_PROMPT | llm | StrOutputParser()
     return chain.invoke({"conversation": conversation_text})
 
-# ---------------- QA WITH MEMORY ----------------
 def generate_answer(query, summary="", recent_msgs=None):
     if recent_msgs is None:
         recent_msgs = []
@@ -83,19 +85,32 @@ def generate_answer(query, summary="", recent_msgs=None):
 
     prompt = ChatPromptTemplate.from_template(
         """
-        You are a real estate news analyst.
+        You are a professional real estate news analyst.
 
-        Conversation summary:
+        Your task is to answer the user's question using ONLY the provided article context.
+        Do NOT use external knowledge or make assumptions.
+
+        If the answer cannot be found in the article context, clearly say:
+        "I don't know based on the provided article."
+
+        Conversation summary (for continuity only):
         {summary}
 
-        Recent conversation:
+        Recent conversation (for reference only):
         {chat_history}
 
-        Article context:
+        Article context (primary source of truth):
         {context}
 
-        Question:
+        User question:
         {query}
+
+        Guidelines:
+        - Be factual and precise.
+        - Cite names, companies, locations, and dates exactly as mentioned.
+        - Keep the answer concise and well-structured.
+        - Do not hallucinate or speculate.
+        - If multiple viewpoints are mentioned, summarize them neutrally.
         """
     )
 
@@ -115,7 +130,6 @@ def generate_answer(query, summary="", recent_msgs=None):
 
     answer = chain.invoke(query)
 
-    # -------- MEMORY UPDATE (returned to frontend) --------
     recent_msgs.append(f"User: {query}")
     recent_msgs.append(f"Assistant: {answer}")
 
@@ -125,7 +139,6 @@ def generate_answer(query, summary="", recent_msgs=None):
 
     return answer, summary, recent_msgs
 
-# ---------------- LOCAL TEST ----------------
 if __name__ == "__main__":
     urls = [
         "https://therealdeal.com/national/2026/01/28/alexander-brothers-sex-trafficking-trial-day-two/"
