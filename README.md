@@ -175,6 +175,7 @@ If you are interested in:
 - Trustworthy AI systems
 
 Feel free to connect and discuss ideas.
+💻 LinkedIn : https://www.linkedin.com/in/manoj-a-a-659879293/
 
 ---
 
